@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Список задач</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f9eeff; margin: 0; padding: 20px; }
+    h1 { text-align: center; margin-bottom: 20px; }
+    form { background: #ffd5b0; padding: 15px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    input, textarea, select, button { margin: 5px 0; padding: 8px; border-radius: 6px; border: 1px solid #ccc; background-color: #fff6ee; width: 100%; box-sizing: border-box; font-size: 14px; }
+    form button { background: #f5a9c5; border: none; color: #fff; font-weight: bold; cursor: pointer; }
+    form button:hover { background: #ec89ac; }
+    .actions button { border: none; cursor: pointer; width: auto; padding: 6px 12px; margin-right: 5px; border-radius: 6px; font-weight: bold; color: #fff; }
+    .actions button.delete { background: #f6a6a6; }
+    .actions button.delete:hover { background: #e68585; }
+    .actions button.edit { background: #a6d3f6; }
+    .actions button.edit:hover { background: #7cbbea; }
+    input[type="file"] { border: none; padding: 6px; background: #e7d5f7; cursor: pointer; }
+    input[type="file"]::file-selector-button { background: #d0b0ff; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: bold; color: #fff; }
+    input[type="file"]::file-selector-button:hover { background: #bb99ee; }
+    .task { background: #fff; border-radius: 10px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .task.pending { background: #ffe1ab; }
+    .task.in_progress { background: #c7e6ff; }
+    .task.done { background: #d5ffd5; }
+    .task h3 { margin: 0 0 8px; }
+    .edit-form input, .edit-form textarea, .edit-form select { width: 95%; }
+    .file-list { margin: 10px 0; padding-left: 18px; }
+    .file-list li { margin: 4px 0; }
+    .file-list button { margin-left: 10px; background: #f6a6a6; color: #fff; border: none; padding: 3px 6px; border-radius: 4px; cursor: pointer; }
+    .file-list button:hover { background: #e68585; }
+  </style>
+</head>
+<body>
+  <h1>Список задач</h1>
+
+  <form id="createForm">
+    <h3>Новая задача</h3>
+    <input type="text" name="title" placeholder="Заголовок" required />
+    <textarea name="description" placeholder="Описание"></textarea>
+    <select name="status">
+      <option value="pending">В ожидании</option>
+      <option value="in_progress">В процессе</option>
+      <option value="done">Завершено</option>
+    </select>
+    <input type="date" name="due_date" />
+    <input type="file" name="files" multiple />
+    <button type="submit">Добавить задачу</button>
+  </form>
+
+  <div>
+    <label>Фильтр по статусу: </label>
+    <select id="filter">
+      <option value="">Все</option>
+      <option value="pending">В ожидании</option>
+      <option value="in_progress">В процессе</option>
+      <option value="done">Завершено</option>
+    </select>
+  </div>
+
+  <div id="tasks"></div>
+
+  <script>
+    const tasksEl = document.getElementById('tasks');
+    const createForm = document.getElementById('createForm');
+    const filterEl = document.getElementById('filter');
+
+    const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
+    const statusLabels = {
+      pending: 'В ожидании',
+      in_progress: 'В процессе',
+      done: 'Завершено'
+    };
+
+    // загрузка списка
+    async function fetchTasks() {
+      const status = filterEl.value;
+      let url = '/tasks';
+      if (status) url += '?status=' + encodeURIComponent(status);
+      const res = await fetch(url);
+      if (!res.ok) { tasksEl.innerHTML = '<p>Ошибка загрузки</p>'; return; }
+      const tasks = await res.json();
+      renderTasks(tasks);
+    }
+
+    // рендер задач
+    function renderTasks(tasks) {
+      tasksEl.innerHTML = '';
+      for (const t of tasks) {
+        const div = document.createElement('div');
+        div.className = 'task ' + t.status;
+        div.innerHTML = `
+          <h3>${escapeHtml(t.title)}</h3>
+          <p>${escapeHtml(t.description || '')}</p>
+          <p><strong>Статус:</strong> ${statusLabels[t.status] || t.status}</p>
+          <p><strong>Срок:</strong> ${t.due_date || '-'}</p>
+          ${t.files && t.files.length ? '<p><strong>Файлы:</strong> ' + t.files.map(f => `<a href="${f.url}" target="_blank">${escapeHtml(f.name)}</a>`).join(', ') + '</p>' : ''}
+          <div class="actions">
+            <button class="delete" onclick="deleteTask(${t.id})">Удалить</button>
+            <button class="edit" onclick="showEditForm(${t.id})">Изменить</button>
+          </div>
+        `;
+        tasksEl.appendChild(div);
+      }
+    }
+
+    function escapeHtml(s){ if(!s) return ''; return s.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;'); }
+
+    // удалить задачу
+    async function deleteTask(id) {
+      if (!confirm('Удалить задачу?')) return;
+      const res = await fetch('/tasks/' + id, { method: 'DELETE' });
+      if (!res.ok) alert('Ошибка при удалении задачи');
+      fetchTasks();
+    }
+
+    // показать форму редактирования вместо карточки
+    async function showEditForm(id) {
+      const taskRes = await fetch('/tasks/' + id);
+      if (!taskRes.ok) { alert('Не удалось загрузить задачу'); return; }
+      const task = await taskRes.json();
+
+      const div = document.createElement('div');
+      div.className = 'task edit-form ' + task.status;
+
+      const filesHtml = (task.files && task.files.length)
+        ? `<ul class="file-list">` + task.files.map(f =>
+            `<li>${escapeHtml(f.name)} <button onclick="deleteFile(${id}, ${f.id})" type="button">Удалить</button></li>`
+          ).join('') + `</ul>`
+        : '<p>Файлов нет</p>';
+
+      div.innerHTML = `
+        <h3>Редактировать задачу</h3>
+        <input type="text" id="edit-title-${id}" value="${escapeHtml(task.title)}" />
+        <textarea id="edit-desc-${id}">${escapeHtml(task.description || '')}</textarea>
+        <select id="edit-status-${id}">
+          <option value="pending" ${task.status === 'pending' ? 'selected' : ''}>В ожидании</option>
+          <option value="in_progress" ${task.status === 'in_progress' ? 'selected' : ''}>В процессе</option>
+          <option value="done" ${task.status === 'done' ? 'selected' : ''}>Завершено</option>
+        </select>
+        <input type="date" id="edit-due-${id}" value="${task.due_date || ''}" />
+        <h4>Файлы</h4>
+        ${filesHtml}
+        <input type="file" id="edit-files-${id}" multiple />
+        <div class="actions">
+          <button class="edit" onclick="saveTask(${id})" type="button">Сохранить</button>
+          <button class="delete" onclick="fetchTasks()" type="button">Отмена</button>
+        </div>
+      `;
+
+      // найти и заменить старую карточку (по кнопке showEditForm)
+      const oldTask = [...tasksEl.children].find(c => c.querySelector('.actions button.edit') && c.querySelector('.actions button.edit').getAttribute('onclick')?.includes(`showEditForm(${id})`));
+      if (oldTask) tasksEl.replaceChild(div, oldTask);
+      else tasksEl.prepend(div);
+    }
+
+    // удалить файл (используем существующий серверный эндпоинт DELETE /files/:id)
+    async function deleteFile(taskId, fileId) {
+      if (!confirm('Удалить файл?')) return;
+      const res = await fetch(`/files/${fileId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        alert('Ошибка при удалении файла');
+      }
+      // обновить форму редактирования
+      showEditForm(taskId);
+    }
+
+    // сохранить задачу и новые файлы — единый PUT multipart/form-data
+    async function saveTask(id) {
+      const newTitle = document.getElementById('edit-title-' + id).value.trim();
+      const newDescription = document.getElementById('edit-desc-' + id).value;
+      const newStatus = document.getElementById('edit-status-' + id).value;
+      const newDue = document.getElementById('edit-due-' + id).value;
+      const newFilesInput = document.getElementById('edit-files-' + id);
+
+      const formData = new FormData();
+      formData.append('title', newTitle);
+      formData.append('description', newDescription);
+      formData.append('status', newStatus);
+      formData.append('due_date', newDue || '');
+
+      // проверка размеров новых файлов
+      if (newFilesInput && newFilesInput.files.length) {
+        for (const file of newFilesInput.files) {
+          if (file.size > MAX_FILE_SIZE) {
+            alert(`Файл "${file.name}" превышает 5 MB и не будет загружен`);
+            return;
+          }
+          formData.append('files', file);
+        }
+      }
+
+      const res = await fetch(`/tasks/${id}`, { method: 'PUT', body: formData });
+      if (!res.ok) {
+        // попробовать прочитать тело ошибки
+        const err = await res.json().catch(() => ({}));
+        if (err.error === 'file_too_large') {
+          alert('Один из файлов слишком большой (максимум 5 MB)');
+        } else {
+          alert('Ошибка при сохранении задачи');
+        }
+        return;
+      }
+
+      fetchTasks();
+    }
+
+    // создание новой задачи (с проверкой размера файлов)
+    createForm.addEventListener('submit', async ev => {
+      ev.preventDefault();
+      const fd = new FormData(createForm);
+      for (const file of fd.getAll('files')) {
+        if (file.size > MAX_FILE_SIZE) {
+          alert(`Файл "${file.name}" превышает 5 MB`);
+          return;
+        }
+      }
+      const res = await fetch('/tasks', { method: 'POST', body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(()=>({}));
+        if (err.error === 'file_too_large') alert('Файл слишком большой (максимум 5 MB)');
+        else alert('Ошибка при создании задачи');
+        return;
+      }
+      createForm.reset();
+      fetchTasks();
+    });
+
+    filterEl.addEventListener('change', fetchTasks);
+    fetchTasks();
+  </script>
+</body>
+</html>
