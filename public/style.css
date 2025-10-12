@@ -1,0 +1,177 @@
+body { 
+  font-family: Arial, sans-serif; 
+  background: #f9eeff; 
+  margin: 0; 
+  padding: 20px; 
+}
+
+h1 { 
+  text-align: center; 
+  margin-bottom: 30px; 
+}
+
+form { 
+  background: #ffd5b0; 
+  padding: 15px; 
+  border-radius: 8px; 
+  margin-bottom: 20px; 
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05); 
+}
+
+input, textarea, select, button { 
+  margin: 5px 0; 
+  padding: 8px; 
+  border-radius: 6px; 
+  border: 1px solid #ccc; 
+  background-color: #fff6ee; 
+  width: 100%; 
+  box-sizing: border-box; 
+  font-size: 14px; 
+}
+
+form button { 
+  background: #f5a9c5; 
+  border: none; 
+  color: #fff; 
+  font-weight: bold; 
+  cursor: pointer; 
+}
+
+form button:hover { 
+  background: #ec89ac; 
+}
+
+.actions button { 
+  border: none; 
+  cursor: pointer; 
+  width: auto; 
+  padding: 6px 12px; 
+  margin-right: 5px; 
+  border-radius: 6px; 
+  font-weight: bold; 
+  color: #fff; 
+}
+
+.actions button.delete { 
+  background: #f6a6a6; 
+}
+
+.actions button.delete:hover { 
+  background: #e68585; 
+}
+
+.actions button.edit { 
+  background: #a6d3f6; 
+}
+
+.actions button.edit:hover { 
+  background: #7cbbea; 
+}
+
+input[type="file"] { 
+  border: none; 
+  padding: 6px; 
+  background: #e7d5f7; 
+  cursor: pointer; 
+}
+
+input[type="file"]::file-selector-button { 
+  background: #d0b0ff; 
+  border: none; 
+  padding: 6px 12px; 
+  border-radius: 6px; 
+  cursor: pointer; 
+  font-weight: bold; 
+  color: #fff; 
+}
+
+input[type="file"]::file-selector-button:hover { 
+  background: #bb99ee; 
+}
+
+.task { 
+  background: #fff; 
+  border-radius: 10px; 
+  padding: 15px; 
+  margin-bottom: 15px; 
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08); 
+}
+
+.task.pending { 
+  background: #ffe1ab; 
+}
+
+.task.in_progress { 
+  background: #c7e6ff; 
+}
+
+.task.done { 
+  background: #d5ffd5; 
+}
+
+.task h3 { 
+  margin: 0 0 8px; 
+}
+
+.edit-form input, .edit-form textarea, .edit-form select { 
+  width: 95%; 
+}
+
+.file-list { 
+  margin: 10px 0; 
+  padding-left: 18px; 
+}
+
+.file-list li { 
+  margin: 4px 0; 
+}
+
+.file-list button { 
+  margin-left: 10px; 
+  background: #f6a6a6; 
+  color: #fff; 
+  border: none; 
+  padding: 3px 6px; 
+  border-radius: 4px; 
+  cursor: pointer; 
+}
+
+.file-list button:hover { 
+  background: #e68585; 
+}
+
+.auth-form { 
+  max-width: 400px; 
+  margin: 50px auto; 
+}
+
+.auth-form h2 { 
+  text-align: center; 
+}
+
+.user-info { 
+  position: absolute; 
+  top: 20px; 
+  right: 20px; 
+  background: #e7d5f7; 
+  padding: 10px; 
+  border-radius: 6px; 
+}
+
+.hidden { 
+  display: none; 
+}
+
+.loading { 
+  text-align: center; 
+  padding: 20px; 
+  color: #666; 
+}
+
+.error { 
+  background: #ffebee; 
+  color: #c62828; 
+  padding: 10px; 
+  border-radius: 6px; 
+  margin: 10px 0; 
+}

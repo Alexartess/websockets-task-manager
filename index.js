@@ -4,6 +4,13 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const sqlite3 = require('sqlite3').verbose();
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
+const cookieParser = require('cookie-parser');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_EXPIRES_IN = '7d';
+const SALT_ROUNDS = 12;
 
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
@@ -17,21 +24,22 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ 
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 } // максимум 5 MB
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
-
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(bodyParser.json());
+app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOAD_DIR));
 
-//DB 
+
 const DB_PATH = path.join(__dirname, 'db.sqlite');
 const db = new sqlite3.Database(DB_PATH);
 
+//инициализация базы данных
 db.serialize(() => {
   db.run(`CREATE TABLE IF NOT EXISTS tasks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,7 +47,8 @@ db.serialize(() => {
     description TEXT,
     status TEXT NOT NULL DEFAULT 'pending',
     due_date TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    user_id INTEGER NOT NULL
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS files (
@@ -50,9 +59,17 @@ db.serialize(() => {
     mime TEXT,
     FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
   )`);
+
+  //users 
+  db.run(`CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
 });
 
-
+//функции для работы с БД
 function runAsync(sql, params=[]) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function(err) {
@@ -61,6 +78,7 @@ function runAsync(sql, params=[]) {
     });
   });
 }
+
 function allAsync(sql, params=[]) {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => {
@@ -69,6 +87,7 @@ function allAsync(sql, params=[]) {
     });
   });
 }
+
 function getAsync(sql, params=[]) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => {
@@ -78,61 +97,233 @@ function getAsync(sql, params=[]) {
   });
 }
 
-//REST API 
+// Middleware аутентификации
+const authenticateToken = (req, res, next) => {
+  const token = req.cookies?.token;
+  
+  if (!token) {
+    return res.status(401).json({ error: 'access_denied', message: 'Требуется аутентификация' });
+  }
+
+  jwt.verify(token, JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ error: 'invalid_token', message: 'Невалидный токен' });
+    }
+    req.user = user;
+    next();
+  });
+};
+
+// регистрация
+app.post('/auth/register', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ 
+        error: 'username_password_required',
+        message: 'Имя пользователя и пароль обязательны' 
+      });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ 
+        error: 'password_too_short',
+        message: 'Пароль должен быть не менее 6 символов' 
+      });
+    }
+
+    const existingUser = await getAsync('SELECT id FROM users WHERE username = ?', [username]);
+    if (existingUser) {
+      return res.status(400).json({ 
+        error: 'user_exists',
+        message: 'Пользователь с таким именем уже существует' 
+      });
+    }
+
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    const now = new Date().toISOString();
+
+    const result = await runAsync(
+      'INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?)',
+      [username, passwordHash, now]
+    );
+
+    const token = jwt.sign(
+      { id: result.lastID, username }, 
+      JWT_SECRET, 
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.status(201).json({ 
+      message: 'user_created', 
+      user: { id: result.lastID, username } 
+    });
+  } catch (err) {
+    console.error('Registration error:', err);
+    res.status(500).json({ 
+      error: 'internal_error',
+      message: 'Внутренняя ошибка сервера' 
+    });
+  }
+});
+
+
+//вход
+app.post('/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    
+    if (!username || !password) {
+      return res.status(400).json({ 
+        error: 'username_password_required',
+        message: 'Имя пользователя и пароль обязательны' 
+      });
+    }
+
+    const user = await getAsync('SELECT * FROM users WHERE username = ?', [username]);
+    if (!user) {
+      return res.status(401).json({ 
+        error: 'invalid_credentials',
+        message: 'Неверное имя пользователя или пароль' 
+      });
+    }
+
+    const isValidPassword = await bcrypt.compare(password, user.password_hash);
+    if (!isValidPassword) {
+      return res.status(401).json({ 
+        error: 'invalid_credentials',
+        message: 'Неверное имя пользователя или пароль' 
+      });
+    }
+
+    const token = jwt.sign(
+      { id: user.id, username: user.username }, 
+      JWT_SECRET, 
+      { expiresIn: JWT_EXPIRES_IN }
+    );
+
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    res.json({ 
+      message: 'login_success', 
+      user: { id: user.id, username: user.username } 
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ 
+      error: 'internal_error',
+      message: 'Внутренняя ошибка сервера' 
+    });
+  }
+});
+
+//выход
+app.post('/auth/logout', (req, res) => {
+  res.clearCookie('token');
+  res.json({ message: 'logout_success' });
+});
+
+//проверка текущего состояния аутентификации пользователя
+app.get('/auth/me', authenticateToken, (req, res) => {
+  res.json({ user: req.user });
+});
+
+
+//REST API
+
+//маршруты для работы с задачами требуют аутентификации
 
 // GET /tasks?status=...
-app.get('/tasks', async (req, res) => {
+app.get('/tasks', authenticateToken, async (req, res) => {
   try {
     const status = req.query.status;
     let rows;
+    //выбираем задачи конкретного пользователя
     if (status) {
-      rows = await allAsync('SELECT * FROM tasks WHERE status = ? ORDER BY due_date IS NULL, due_date ASC', [status]);
+      rows = await allAsync(
+        
+        'SELECT * FROM tasks WHERE status = ? AND user_id = ? ORDER BY due_date IS NULL, due_date ASC', 
+        [status, req.user.id]
+      );
     } else {
-      rows = await allAsync('SELECT * FROM tasks ORDER BY due_date IS NULL, due_date ASC');
+      rows = await allAsync(
+        'SELECT * FROM tasks WHERE user_id = ? ORDER BY due_date IS NULL, due_date ASC',
+        [req.user.id]
+      );
     }
+    
     for (const t of rows) {
       const files = await allAsync('SELECT id, filename, original_name, mime FROM files WHERE task_id = ?', [t.id]);
       t.files = files.map(f => ({ id: f.id, url: '/uploads/' + f.filename, name: f.original_name, mime: f.mime }));
     }
-    res.status(200).json(rows);  //200  ok
+    res.status(200).json(rows);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'internal_error' });  //500 server error
-  }
-});
-
-// GET /tasks/:id
-app.get('/tasks/:id', async (req, res) => {
-  try {
-    const row = await getAsync('SELECT * FROM tasks WHERE id = ?', [req.params.id]);
-    if (!row) return res.status(404).json({ error: 'not_found' });
-    const files = await allAsync('SELECT id, filename, original_name, mime FROM files WHERE task_id = ?', [row.id]);
-    row.files = files.map(f => ({ id: f.id, url: '/uploads/' + f.filename, name: f.original_name, mime: f.mime }));
-    res.status(200).json(row);
-  } catch (err) {
-    console.error(err);
+    console.error('Get tasks error:', err);
     res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// POST /tasks
-app.post('/tasks', upload.array('files'), async (req, res) => {
+// GET /tasks/:id
+app.get('/tasks/:id', authenticateToken, async (req, res) => {
   try {
-    const isForm = req.is('multipart/form-data') || req.files;
-    let payload = isForm ? req.body : req.body;
+    const row = await getAsync(
+      'SELECT * FROM tasks WHERE id = ? AND user_id = ?', 
+      [req.params.id, req.user.id]
+    );
+    if (!row) return res.status(404).json({ error: 'not_found' });
+    
+    const files = await allAsync('SELECT id, filename, original_name, mime FROM files WHERE task_id = ?', [row.id]);
+    row.files = files.map(f => ({ id: f.id, url: '/uploads/' + f.filename, name: f.original_name, mime: f.mime }));
+    res.status(200).json(row);
+  } catch (err) {
+    console.error('Get task error:', err);
+    res.status(500).json({ error: 'internal_error' });
+  }
+});
 
-    const title = (payload.title || '').trim();
-    if (!title) return res.status(400).json({ error: 'title_required' });  //400 bad req
-    const description = payload.description || '';
-    const status = payload.status || 'pending';
-    const due_date = payload.due_date || null;
+// POST /tasks 
+app.post('/tasks', authenticateToken, upload.array('files'), async (req, res) => {
+  try {
+    console.log('Creating task for user:', req.user.id);
+    console.log('Files:', req.files);
+    console.log('Body:', req.body);
+
+    const title = (req.body.title || '').trim();
+    if (!title) return res.status(400).json({ error: 'title_required' });
+    
+    const description = req.body.description || '';
+    const status = req.body.status || 'pending';
+    const due_date = req.body.due_date || null;
 
     const now = new Date().toISOString();
-    const result = await runAsync('INSERT INTO tasks (title, description, status, due_date, created_at) VALUES (?, ?, ?, ?, ?)', [title, description, status, due_date, now]);
+    const result = await runAsync(
+      'INSERT INTO tasks (title, description, status, due_date, created_at, user_id) VALUES (?, ?, ?, ?, ?, ?)', 
+      [title, description, status, due_date, now, req.user.id]
+    );
+    
     const taskId = result.lastID;
 
     if (req.files && req.files.length) {
-      const stmtPromises = req.files.map(f => runAsync('INSERT INTO files (task_id, filename, original_name, mime) VALUES (?, ?, ?, ?)', [taskId, f.filename, f.originalname, f.mimetype]));
+      console.log('Saving files:', req.files.length);
+      const stmtPromises = req.files.map(f => 
+        runAsync(
+          'INSERT INTO files (task_id, filename, original_name, mime) VALUES (?, ?, ?, ?)', 
+          [taskId, f.filename, f.originalname, f.mimetype]
+        )
+      );
       await Promise.all(stmtPromises);
     }
 
@@ -140,37 +331,45 @@ app.post('/tasks', upload.array('files'), async (req, res) => {
     const files = await allAsync('SELECT id, filename, original_name, mime FROM files WHERE task_id = ?', [taskId]);
     created.files = files.map(f => ({ id: f.id, url: '/uploads/' + f.filename, name: f.original_name, mime: f.mime }));
 
-    res.status(201).json(created);  //201 created
+    res.status(201).json(created);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'internal_error' });
+    console.error('Create task error:', err);
+    res.status(500).json({ error: 'internal_error', details: err.message });
   }
 });
 
 // PUT /tasks/:id
-app.put('/tasks/:id', upload.array('files'), async (req, res) => {
+app.put('/tasks/:id', authenticateToken, upload.array('files'), async (req, res) => {
   try {
     const id = req.params.id;
-    const exists = await getAsync('SELECT * FROM tasks WHERE id = ?', [id]);
+    const exists = await getAsync(
+      'SELECT * FROM tasks WHERE id = ? AND user_id = ?', 
+      [id, req.user.id]
+    );
     if (!exists) return res.status(404).json({ error: 'not_found' });
-
-    const isForm = req.is('multipart/form-data') || req.files;
-    const payload = isForm ? req.body : req.body;
 
     const fields = [];
     const params = [];
-    if (payload.title !== undefined) { fields.push('title = ?'); params.push(payload.title); }
-    if (payload.description !== undefined) { fields.push('description = ?'); params.push(payload.description); }
-    if (payload.status !== undefined) { fields.push('status = ?'); params.push(payload.status); }
-    if (payload.due_date !== undefined) { fields.push('due_date = ?'); params.push(payload.due_date || null); }
+    if (req.body.title !== undefined) { fields.push('title = ?'); params.push(req.body.title); }
+    if (req.body.description !== undefined) { fields.push('description = ?'); params.push(req.body.description); }
+    if (req.body.status !== undefined) { fields.push('status = ?'); params.push(req.body.status); }
+    if (req.body.due_date !== undefined) { fields.push('due_date = ?'); params.push(req.body.due_date || null); }
 
     if (fields.length) {
-      params.push(id);
-      await runAsync(`UPDATE tasks SET ${fields.join(', ')} WHERE id = ?`, params);
+      params.push(id, req.user.id);
+      await runAsync(
+        `UPDATE tasks SET ${fields.join(', ')} WHERE id = ? AND user_id = ?`, 
+        params
+      );
     }
 
     if (req.files && req.files.length) {
-      const stmtPromises = req.files.map(f => runAsync('INSERT INTO files (task_id, filename, original_name, mime) VALUES (?, ?, ?, ?)', [id, f.filename, f.originalname, f.mimetype]));
+      const stmtPromises = req.files.map(f => 
+        runAsync(
+          'INSERT INTO files (task_id, filename, original_name, mime) VALUES (?, ?, ?, ?)', 
+          [id, f.filename, f.originalname, f.mimetype]
+        )
+      );
       await Promise.all(stmtPromises);
     }
 
@@ -180,16 +379,19 @@ app.put('/tasks/:id', upload.array('files'), async (req, res) => {
 
     res.status(200).json(updated);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'internal_error' });
+    console.error('Update task error:', err);
+    res.status(500).json({ error: 'internal_error', details: err.message });
   }
 });
 
 // DELETE /tasks/:id
-app.delete('/tasks/:id', async (req, res) => {
+app.delete('/tasks/:id', authenticateToken, async (req, res) => {
   try {
     const id = req.params.id;
-    const exists = await getAsync('SELECT * FROM tasks WHERE id = ?', [id]);
+    const exists = await getAsync(
+      'SELECT * FROM tasks WHERE id = ? AND user_id = ?', 
+      [id, req.user.id]
+    );
     if (!exists) return res.status(404).json({ error: 'not_found' });
 
     const files = await allAsync('SELECT filename FROM files WHERE task_id = ?', [id]);
@@ -199,56 +401,37 @@ app.delete('/tasks/:id', async (req, res) => {
     }
 
     await runAsync('DELETE FROM files WHERE task_id = ?', [id]);
-    await runAsync('DELETE FROM tasks WHERE id = ?', [id]);
+    await runAsync('DELETE FROM tasks WHERE id = ? AND user_id = ?', [id, req.user.id]);
 
     res.status(204).send();
   } catch (err) {
-    console.error(err);
+    console.error('Delete task error:', err);
     res.status(500).json({ error: 'internal_error' });
   }
 });
 
 // DELETE /files/:id
-app.delete('/files/:id', async (req, res) => {
+app.delete('/files/:id', authenticateToken, async (req, res) => {
   try {
-    const f = await getAsync('SELECT * FROM files WHERE id = ?', [req.params.id]);
+    const f = await getAsync(`
+      SELECT f.* FROM files f 
+      JOIN tasks t ON f.task_id = t.id 
+      WHERE f.id = ? AND t.user_id = ?
+    `, [req.params.id, req.user.id]);
+    
     if (!f) return res.status(404).json({ error: 'not_found' });
+    
     const p = path.join(UPLOAD_DIR, f.filename);
     if (fs.existsSync(p)) fs.unlinkSync(p);
     await runAsync('DELETE FROM files WHERE id = ?', [req.params.id]);
-    res.status(204).send();  //204 no content
+    res.status(204).send();
   } catch (err) {
-    console.error(err);
+    console.error('Delete file error:', err);
     res.status(500).json({ error: 'internal_error' });
   }
 });
 
-// Удаление файла по id
-app.delete('/files/:id', (req, res) => {
-  const id = req.params.id;
-  db.get('SELECT * FROM files WHERE id = ?', [id], (err, file) => {
-    if (err) return res.status(500).json({ error: err.message });
-    if (!file) return res.status(404).json({ error: 'File not found' });  //404 not found
-
-    // удалить запись из базы
-    db.run('DELETE FROM files WHERE id = ?', [id], err2 => {
-      if (err2) return res.status(500).json({ error: err2.message });
-
-      // удалить сам файл из папки uploads
-      const fs = require('fs');
-      const path = require('path');
-      const filePath = path.join(__dirname, 'uploads', file.path);
-
-      fs.unlink(filePath, err3 => {
-        // если файл уже удалён отвечаем 200
-        if (err3) console.warn('Ошибка при удалении файла:', err3.message);
-        res.json({ success: true });
-      });
-    });
-  });
-});
-
-//ограничение размера файла
+// Ограничение размера файла
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({ error: 'file_too_large', message: 'Максимальный размер файла 5 MB' });
@@ -256,7 +439,6 @@ app.use((err, req, res, next) => {
   console.error(err);
   res.status(500).json({ error: 'internal_error' });
 });
-
 
 app.listen(PORT, () => {
   console.log(`Server listening on http://localhost:${PORT}`);
