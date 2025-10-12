@@ -94,10 +94,10 @@ app.get('/tasks', async (req, res) => {
       const files = await allAsync('SELECT id, filename, original_name, mime FROM files WHERE task_id = ?', [t.id]);
       t.files = files.map(f => ({ id: f.id, url: '/uploads/' + f.filename, name: f.original_name, mime: f.mime }));
     }
-    res.status(200).json(rows);
+    res.status(200).json(rows);  //200  ok
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'internal_error' });
+    res.status(500).json({ error: 'internal_error' });  //500 server error
   }
 });
 
@@ -122,7 +122,7 @@ app.post('/tasks', upload.array('files'), async (req, res) => {
     let payload = isForm ? req.body : req.body;
 
     const title = (payload.title || '').trim();
-    if (!title) return res.status(400).json({ error: 'title_required' });
+    if (!title) return res.status(400).json({ error: 'title_required' });  //400 bad req
     const description = payload.description || '';
     const status = payload.status || 'pending';
     const due_date = payload.due_date || null;
@@ -140,7 +140,7 @@ app.post('/tasks', upload.array('files'), async (req, res) => {
     const files = await allAsync('SELECT id, filename, original_name, mime FROM files WHERE task_id = ?', [taskId]);
     created.files = files.map(f => ({ id: f.id, url: '/uploads/' + f.filename, name: f.original_name, mime: f.mime }));
 
-    res.status(201).json(created);
+    res.status(201).json(created);  //201 created
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'internal_error' });
@@ -216,7 +216,7 @@ app.delete('/files/:id', async (req, res) => {
     const p = path.join(UPLOAD_DIR, f.filename);
     if (fs.existsSync(p)) fs.unlinkSync(p);
     await runAsync('DELETE FROM files WHERE id = ?', [req.params.id]);
-    res.status(204).send();
+    res.status(204).send();  //204 no content
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'internal_error' });
@@ -228,7 +228,7 @@ app.delete('/files/:id', (req, res) => {
   const id = req.params.id;
   db.get('SELECT * FROM files WHERE id = ?', [id], (err, file) => {
     if (err) return res.status(500).json({ error: err.message });
-    if (!file) return res.status(404).json({ error: 'File not found' });
+    if (!file) return res.status(404).json({ error: 'File not found' });  //404 not found
 
     // удалить запись из базы
     db.run('DELETE FROM files WHERE id = ?', [id], err2 => {
@@ -240,7 +240,7 @@ app.delete('/files/:id', (req, res) => {
       const filePath = path.join(__dirname, 'uploads', file.path);
 
       fs.unlink(filePath, err3 => {
-        // даже если unlink дал ошибку (например, файл уже удалён) — отвечаем 200
+        // если файл уже удалён отвечаем 200
         if (err3) console.warn('Ошибка при удалении файла:', err3.message);
         res.json({ success: true });
       });
@@ -248,8 +248,7 @@ app.delete('/files/:id', (req, res) => {
   });
 });
 
-
-// Error handler for Multer and other middleware
+//ограничение размера файла
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({ error: 'file_too_large', message: 'Максимальный размер файла 5 MB' });

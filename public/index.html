@@ -148,13 +148,13 @@
         </div>
       `;
 
-      // найти и заменить старую карточку (по кнопке showEditForm)
+      // найти и заменить старую карточку по кнопке showEditForm
       const oldTask = [...tasksEl.children].find(c => c.querySelector('.actions button.edit') && c.querySelector('.actions button.edit').getAttribute('onclick')?.includes(`showEditForm(${id})`));
       if (oldTask) tasksEl.replaceChild(div, oldTask);
       else tasksEl.prepend(div);
     }
 
-    // удалить файл (используем существующий серверный эндпоинт DELETE /files/:id)
+    // удалить файл  DELETE /files/:id
     async function deleteFile(taskId, fileId) {
       if (!confirm('Удалить файл?')) return;
       const res = await fetch(`/files/${fileId}`, { method: 'DELETE' });
@@ -165,7 +165,7 @@
       showEditForm(taskId);
     }
 
-    // сохранить задачу и новые файлы — единый PUT multipart/form-data
+    // сохранить задачу и новые файлы  PUT multipart/form-data
     async function saveTask(id) {
       const newTitle = document.getElementById('edit-title-' + id).value.trim();
       const newDescription = document.getElementById('edit-desc-' + id).value;
@@ -205,7 +205,7 @@
       fetchTasks();
     }
 
-    // создание новой задачи (с проверкой размера файлов)
+    // создание новой задачи 
     createForm.addEventListener('submit', async ev => {
       ev.preventDefault();
       const fd = new FormData(createForm);
