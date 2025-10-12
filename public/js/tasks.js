@@ -19,19 +19,38 @@ const TaskManager = {
   tasksElement: null,
   createForm: null,
   filterElement: null,
+  initialized: false, // Флаг инициализации
 
   init() {
+     if (this.initialized) {
+      console.log('TaskManager already initialized');
+      return;
+    }
     this.tasksElement = document.getElementById('tasks');
     this.createForm = document.getElementById('createForm');
     this.filterElement = document.getElementById('filter');
 
     this.bindEvents();
     this.fetchTasks();
+    this.initialized = true;
+    
+    console.log('TaskManager initialized');
   },
 
   bindEvents() {
-    this.createForm.addEventListener('submit', this.handleCreateTask.bind(this));
-    this.filterElement.addEventListener('change', this.fetchTasks.bind(this));
+    // Удаляем все существующие обработчики перед добавлением
+    this.createForm.removeEventListener('submit', this.boundHandleCreateTask);
+    this.filterElement.removeEventListener('change', this.boundFetchTasks);
+    
+    // Привязываем методы к контексту
+    this.boundHandleCreateTask = this.handleCreateTask.bind(this);
+    this.boundFetchTasks = this.fetchTasks.bind(this);
+    
+    // Добавляем обработчики
+    this.createForm.addEventListener('submit', this.boundHandleCreateTask);
+    this.filterElement.addEventListener('change', this.boundFetchTasks);
+    
+    console.log('Event handlers bound');
   },
 
   async fetchTasks() {
@@ -236,6 +255,7 @@ const TaskManager = {
 
 async handleCreateTask(ev) {
   ev.preventDefault();
+  console.log('=== FORM SUBMIT STARTED ===', new Date().toISOString());
   const fd = new FormData(this.createForm);
   
   console.log('Creating task with data:');
