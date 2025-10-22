@@ -1,0 +1,259 @@
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Структурное D-latch:
+
+entity d_latch struct is
+	PORT( D : in STD_LOGIC;
+		nQ : out STD_LOGIC;
+		Q : out STD_LOGIC);
+end d_latch_struct;
+
+Architecture Structural of d_latch_struct is
+	component nor2 is
+		PORT( A : in STD_LOGIC;
+			B : in STD_LOGIC;
+			Q : out STD_LOGIC);
+	end component;
+	
+	component inv is
+		PORT ( A : in STD_LOGIC;
+			Q : out STD_LOGIC);
+	end component;
+
+	signal R, NOR1OUT, NOR2OUT : STD_LOGIC;
+begin
+
+U0 : inv port map( A => D, Q => R);
+U1 : nor2 port map( A => NOR2OUT, B => D, Q => NOR1OUT);
+U2 : nor2 port map( A => NOR1OUT, B => R, Q => NOR2OUT);
+
+nQ<= NO1OUT;
+Q<= NOR2OUT;
+
+end Structural;
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!Поведенческое D-latch:
+
+entity d_latch_beh is
+	PORT( D : in STD_LOGIC;
+		nQ : out STD_LOGIC;
+		Q : out STD_LOGIC);
+end d_latch_beh;
+
+Architecture Behavioral of d_latch_beh is
+	signal R, NOR1OUT, NOR2OUT : STD_LOGIC;
+begin
+R<= not D;
+NOR1OUT<= not(D or NOR2OUT);
+NOR2OUT<= not(R or NOR1OUT);
+
+nQ<= NOR1OUT;
+Q<= NOR2OUT;
+
+end Behavioral;
+
+!!!!!!!!!!!!!!!!!!!!Правильное описание D-latch with perm:
+entity d_latch_perm is
+	PORT( D : in STD_LOGIC;
+		E : in STD_LOGIC;
+		nQ : out STD_LOGIC;
+		Q : out STD_LOGIC);
+end d_latch_perm;
+Architecture Behavioral of d_latch_perm is
+	signal QTEMP : STD_LOGIC;
+begin
+
+p0: process(D, E)
+begin
+	if (E = '1') then
+		QTEMP<=D;
+	endif;
+end process;
+
+nQ<= not(QTEMP);
+Q<= QTEMP;
+
+end Behavioral;
+
+!!!!!!!!!!!!!!!!!!Поведенческое описание RS-latch:
+entity rs_latch is
+	PORT( S : in STD_LOGIC;
+		R : in STD_LOGIC;
+		nQ : out STD_LOGIC;
+		Q : out STD_LOGIC);
+end rs_latch;
+
+Architecture Behavioral of rs_latch is
+	signal NOR1OUT, NOR2OUT : STD_LOGIC;
+
+begin
+
+NOR1OUT<= not(S or NOR2OUT);
+NOR2OUT<= not(R or NOR1OUT);
+
+Q<= NOR2OUT; 
+nQ<= NOR1OUT;
+
+
+end Behavioral;
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!Задание с лутами:
+entity my_lut6 is
+	Port( I : in STD_LOGIC_VECTOR (5 downto 0);
+		O : out STD_LOGIC);
+end my__lut6;
+
+Architecture Beh of my_lut6 is
+component my_lut5 is
+	Generic( INIT : std_logic_vector(31 downto 0):=(others=>'0'));
+	PORT( I : in STD_LOGIC_VECTOR (4 downto 0);
+		O : out STD_LOGIC);
+end component;
+signal O1 : STD_LOGIC;
+signal O2 : STD_LOGIC;
+begin
+U0: my_lut5 generic map (X"FFAD7635") port map(I => I(4 downto 0), O=>O1);
+U1: my_lut5 generic map (X"FFAD7635") port map(I => I(4 downto 0), O=>O2);
+
+O<= O1 when I(5) = '0' else O2;
+
+end Behavioral;
+
+-------------(lut5)
+entity MY_LUT5 is
+  generic (
+    INIT: std_logic_vector(31 downto 0):=(others=>'0')
+  );
+  Port (
+     I: in std_logic_Vector(4 downto 0);
+     O: out  std_logic
+   );
+end MY_LUT5;
+
+architecture Behavioral of MY_LUT5 is
+
+begin
+O<=INIT(CONV_INTEGER(I));
+end Behavioral;
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!FDRSE:
+entity fdrse is
+    Port ( R : in STD_LOGIC;
+           S : in STD_LOGIC;
+           CE : in STD_LOGIC;
+           D : in STD_LOGIC;
+           C : in STD_LOGIC;
+           Q : out STD_LOGIC);
+end fdrse;
+
+architecture Behavioral of fdrse is
+
+begin
+p1: process (R,S,CE,C)
+begin
+    if (rising_edge(C))then
+    if (R = '1')then 
+        Q<='0';
+    elsif(S='1') then
+        Q<='1';
+    elsif (CE='1') then
+        Q<=D;
+        end if;
+    end if;
+end process;
+end Behavioral;
+
+!!!!!!!!!!!!!!!!!!задание с тристабильным буфером
+entity OR2_tri is
+    Port ( A : in STD_LOGIC;
+           B : in STD_LOGIC;
+           C : out STD_LOGIC);
+end OR2_tri;
+
+architecture Behavioral of OR2_tri is
+
+component MY_BUFT
+  Port ( A : in STD_LOGIC;
+         S: in std_logic;
+         Z : out STD_LOGIC);
+
+end component;
+
+component MY_BUFTN
+  Port ( A : in STD_LOGIC;
+         S: in std_logic;
+         Z : out STD_LOGIC);
+
+end component;
+
+component INV
+  Port ( A : in STD_LOGIC;
+         Z : out STD_LOGIC);
+
+end component;
+
+signal b_n: std_logic;
+
+begin
+
+U1: INV port map
+(
+   A =>B,
+   Z => b_n      
+);
+
+U2: MY_BUFT port map
+(
+ A=>A,
+ S=>b_n,
+ Z=>C        
+);
+
+U3: MY_BUFTN port map
+(
+   A=>B,
+S=>b_n,
+Z=>C        
+);
+
+end Behavioral;
+
+------------------------(MY_BUFTN)
+entity MY_BUFTN is
+    Port ( A : in STD_LOGIC;
+           S: in std_logic;
+           Z : out STD_LOGIC);
+end MY_BUFTN;
+
+architecture Behavioral of MY_BUFTN is
+
+begin
+Z<= A when S = '0' else 'Z';
+end Behavioral;
+
+---------------------(MY_BUFT)
+entity MY_BUFT is
+    Port ( A : in STD_LOGIC;
+           S: in std_logic;
+           Z : out STD_LOGIC);
+end MY_BUFT;
+
+architecture Behavioral of MY_BUFT is
+
+begin
+Z<= A when S = '1' else 'Z';
+end Behavioral;
+
+
+----------------(INV)
+entity INV is
+    Port ( A : in STD_LOGIC;
+           
+           Z : out STD_LOGIC);
+end INV;
+
+architecture Behavioral of inv is
+
+begin
+Z<=not A;
+
+end Behavioral;
+

@@ -8,7 +8,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const cookieParser = require('cookie-parser');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'dltvluHBdhajyETI47-IByyrt7';
 const JWT_EXPIRES_IN = '7d';
 const SALT_ROUNDS = 12;
 
