@@ -1,4 +1,4 @@
-//обработка 401 для fetch
+// обработка 401 для fetch
 async function authFetch(url, options = {}) {
   const res = await fetch(url, {
     ...options,
@@ -14,7 +14,7 @@ async function authFetch(url, options = {}) {
   return res;
 }
 
-//менеджер аутентификации
+// менеджер аутентификации
 const AuthManager = {
   currentUser: null,
 
@@ -31,9 +31,9 @@ const AuthManager = {
     document.getElementById('showLoginLink').addEventListener('click', this.showLogin.bind(this));
   },
 
-  async checkAuth() {  //проверяем состояние аутентификации
+  async checkAuth() {
     try {
-      const res = await fetch('/auth/me');
+      const res = await fetch('/auth/me', { credentials: 'include' });
       if (res.ok) {
         const data = await res.json();
         this.setCurrentUser(data.user);
@@ -57,9 +57,12 @@ const AuthManager = {
     document.getElementById('appSection').classList.remove('hidden');
     document.getElementById('username').textContent = this.currentUser.username;
     
-    // инициализируем менеджер задач после успешной аутентификации
     if (typeof TaskManager !== 'undefined') {
       TaskManager.init();
+    }
+
+    if (typeof initSocket === 'function') {
+      initSocket();
     }
   },
 
@@ -85,6 +88,7 @@ const AuthManager = {
       const res = await fetch('/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(data)
       });
 
@@ -101,38 +105,39 @@ const AuthManager = {
     }
   },
 
-    async handleRegister(ev) {
+  async handleRegister(ev) {
     ev.preventDefault();
     const formData = new FormData(ev.target);
     const data = {
-        username: formData.get('username'),
-        password: formData.get('password')
+      username: formData.get('username'),
+      password: formData.get('password')
     };
 
     try {
-        const res = await fetch('/auth/register', {
+      const res = await fetch('/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(data)
-        });
+      });
 
-        const result = await res.json();
-        
-        if (res.ok) {
+      const result = await res.json();
+      
+      if (res.ok) {
         this.setCurrentUser(result.user);
         this.showApp();
-        } else {
+      } else {
         this.showError(result.message || result.error || 'Неизвестная ошибка');
-        }
+      }
     } catch (err) {
-        console.error('Registration error:', err);
-        this.showError('Ошибка сети при регистрации');
+      console.error('Registration error:', err);
+      this.showError('Ошибка сети при регистрации');
     }
   },
 
   async handleLogout() {
     try {
-      await fetch('/auth/logout', { method: 'POST' });
+      await fetch('/auth/logout', { method: 'POST', credentials: 'include' });
       this.setCurrentUser(null);
       this.showAuth();
     } catch (err) {
