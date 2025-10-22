@@ -101,7 +101,7 @@ const AuthManager = {
         this.showError('Ошибка входа: ' + (error.message || 'Неверные данные'));
       }
     } catch (err) {
-      this.showError('Ошибка сети');
+      console.error('Network error');
     }
   },
 
