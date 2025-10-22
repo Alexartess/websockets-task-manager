@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 import bcrypt from 'bcrypt';
 
-// === Константы ===
+// Константы 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 const server = http.createServer(app);
@@ -24,11 +24,16 @@ const SALT_ROUNDS = 12;
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
+const upload = multer({
+  dest: UPLOAD_DIR,
+  limits: { fileSize: MAX_FILE_SIZE }
+});
+
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR);
 }
 
-// === Настройка базы ===
+//Настройка бд
 const db = new sqlite3.Database('tasks.db');
 db.run(`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,7 +57,7 @@ db.run(`CREATE TABLE IF NOT EXISTS files (
   mime TEXT
 )`);
 
-// === Promise обёртки ===
+//функции для работы с БД
 function runAsync(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
@@ -72,19 +77,12 @@ function allAsync(sql, params = []) {
   });
 }
 
-// === Middleware ===
+//Middleware аутентификации
 app.use(cookieParser());
 app.use(express.json());
 app.use('/uploads', express.static(UPLOAD_DIR));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// === Multer для файлов ===
-const upload = multer({
-  dest: UPLOAD_DIR,
-  limits: { fileSize: MAX_FILE_SIZE }
-});
-
-// === Авторизация ===
 function authMiddleware(req, res, next) {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
@@ -96,7 +94,7 @@ function authMiddleware(req, res, next) {
   }
 }
 
-// === Аутентификация через REST ===
+//регистрация
 app.post('/auth/register', async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -132,6 +130,7 @@ app.post('/auth/register', async (req, res) => {
   }
 });
 
+//вход
 app.post('/auth/login', async (req, res) => {
   const { username, password } = req.body;
   try {
@@ -160,16 +159,19 @@ app.post('/auth/login', async (req, res) => {
   }
 });
 
+//проверка текущего состояния аутентификации пользователя
 app.get('/auth/me', authMiddleware, (req, res) => {
   res.json({ user: { id: req.user.id, username: req.user.username } });
 });
 
+//выход
 app.post('/auth/logout', (req, res) => {
   res.clearCookie('token');
   res.json({ success: true });
 });
 
-// === Socket.IO аутентификация ===
+//Socket.IO 
+//проверка аутентификации
 io.use((socket, next) => {
   const token =
     socket.handshake.auth?.token ||
@@ -184,13 +186,13 @@ io.use((socket, next) => {
   }
 });
 
-// === Socket.IO обработчики ===
+//работа с задачами
 io.on('connection', (socket) => {
   const userId = socket.user.id;
-  console.log(`✅ Socket connected: ${socket.user.username}`);
+  console.log(`Socket connected: ${socket.user.username}`);
   socket.join(userId.toString());
 
-  // Получение задач
+  //получение задач
   socket.on('tasks:get', async (status, callback) => {
     try {
       let rows;
@@ -221,7 +223,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Создание задачи
+  // создание задачи
   socket.on('tasks:create', async (data, callback) => {
     try {
       const { title, description = '', status = 'pending', due_date = null } = data;
@@ -243,7 +245,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Удаление задачи
+  // удаление задачи
   socket.on('tasks:delete', async (id, callback) => {
     try {
       await runAsync('DELETE FROM tasks WHERE id = ? AND user_id = ?', [id, userId]);
@@ -255,7 +257,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Обновление задачи
+  //обновление существующей задачи
   socket.on('tasks:update', async (task, callback) => {
     try {
       const { id, title, description, status, due_date } = task;
@@ -281,7 +283,7 @@ io.on('connection', (socket) => {
   });
 });
 
-// === Файлы (оставляем через REST) ===
+// работа с файлами
 app.post('/tasks/:id/files', authMiddleware, upload.array('files'), async (req, res) => {
   const taskId = req.params.id;
   for (const file of req.files) {
@@ -303,7 +305,6 @@ app.delete('/files/:id', authMiddleware, async (req, res) => {
   res.json({ success: true });
 });
 
-// === Запуск ===
 const PORT = 3000;
 server.listen(PORT, () => {
   console.log(`🚀 Server listening on http://localhost:${PORT}`);

@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', function() {
   AuthManager.init();
 });
 
-// Socket.IO
+//Socket.IO
 function initSocket() {
   if (window.socket) return;
 
